@@ -16,6 +16,27 @@ class CostModelTests(unittest.TestCase):
             Usage(8, 2),
         )
 
+    def test_sums_system_and_judge_usage(self) -> None:
+        row = {
+            "system_output": {
+                "comment": "No issue found.",
+                "usage": {"input_tokens": 100, "output_tokens": 10},
+            },
+            "judge_verdict": {
+                "verdict": "good",
+                "usage": {"input_tokens": 130, "output_tokens": 20},
+            },
+        }
+        self.assertEqual(extract_usage(row), Usage(230, 30))
+
+    def test_prefers_combined_usage_over_component_usage(self) -> None:
+        row = {
+            "usage": {"input_tokens": 12, "output_tokens": 3},
+            "system_usage": {"input_tokens": 8, "output_tokens": 2},
+            "judge_usage": {"input_tokens": 4, "output_tokens": 1},
+        }
+        self.assertEqual(extract_usage(row), Usage(12, 3))
+
     def test_calculates_observed_and_projected_cost(self) -> None:
         summary = summarize_costs([Usage(100, 50), Usage(300, 50)], 2.0, 8.0, 2.0)
         self.assertEqual(summary["items"], 2)
@@ -34,4 +55,3 @@ class CostModelTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

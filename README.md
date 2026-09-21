@@ -19,13 +19,15 @@ The dataset builder and cost model use only the Python standard library. The har
 
 ## Run
 
-Validate or rebuild the checked-in dataset:
+Rebuild the checked-in dataset from Skander's deterministic generator:
 
 ```bash
 python data/build_dataset.py
 ```
 
-Run the cost model against a harness result file containing logged input and output token counts:
+This command overwrites `data/golden_set.jsonl`; do not run it merely to validate a teammate's manual dataset changes.
+
+Run the cost model against a harness result file containing logged input and output token counts. It accepts combined `usage`, separate `system_usage`/`judge_usage`, or usage nested in `system_output` and `judge_verdict`:
 
 ```bash
 python cost_model.py results/<run_id>.jsonl \

@@ -23,8 +23,31 @@ def _non_negative_int(value: Any, field: str) -> int:
 
 
 def extract_usage(row: dict[str, Any]) -> Usage:
-    """Read token counts from either a row's usage object or top-level fields."""
-    usage = row.get("usage", row)
+    """Read combined token counts from a harness result row."""
+    usage = row.get("usage")
+    if usage is not None:
+        return _extract_usage_object(usage)
+
+    component_usages = []
+    for key in ("system_usage", "judge_usage"):
+        if key in row:
+            component_usages.append(_extract_usage_object(row[key]))
+
+    for key in ("system_output", "judge_verdict"):
+        component = row.get(key)
+        if isinstance(component, dict) and "usage" in component:
+            component_usages.append(_extract_usage_object(component["usage"]))
+
+    if component_usages:
+        return Usage(
+            input_tokens=sum(item.input_tokens for item in component_usages),
+            output_tokens=sum(item.output_tokens for item in component_usages),
+        )
+
+    return _extract_usage_object(row)
+
+
+def _extract_usage_object(usage: Any) -> Usage:
     if not isinstance(usage, dict):
         raise ValueError("usage must be an object")
 
@@ -137,4 +160,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
