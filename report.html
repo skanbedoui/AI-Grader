@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Project 1 — The Grader</title>
+<style>
+@page { size: A4; margin: 15mm; } body { font-family: "Liberation Sans", sans-serif; font-size: 10pt; line-height: 1.25; color: #172033; }
+h1 { font-size: 20pt; margin: 0 0 2mm; } h2 { font-size: 13pt; color: #174f78; margin: 4mm 0 1.5mm; border-bottom: 0.3mm solid #aac5d8; }
+p, ul { margin: 1.5mm 0; } ul { padding-left: 5mm; } table { width: 100%; border-collapse: collapse; margin: 2mm 0; }
+th, td { border: 0.2mm solid #9aa8b5; padding: 1.2mm; text-align: left; } th { background: #eaf2f7; }
+.meta { color: #526270; margin-bottom: 3mm; } .pending { background: #fff3cd; padding: 1.5mm; border-left: 1mm solid #d39e00; }
+code { font-family: "Liberation Mono", monospace; font-size: 9pt; } .small { font-size: 8.5pt; }
+</style></head><body>
+<h1>Project 1 — The Grader</h1>
+<div class="meta">CS496 AI Engineering · Code Review Comment Quality · Fall 2026<br>Team: Skander Bedoui, Khalil, Yasmine, Abdallah Djarraya</div>
+<p class="pending"><b>Provisional report:</b> the harness, judge reliability analysis, bias tests, and system runs are not present. Pending fields below must be replaced with timestamped repository evidence before submission.</p>
+
+<h2>1. Task and motivation</h2>
+<p>The system receives a code snippet and produces exactly one review comment. A good comment is <b>correct</b>—it identifies a real issue or correctly reports that none is present—and <b>useful</b>—specific, actionable where appropriate, and professional. Exact matching cannot grade this task because multiple phrasings can describe the same defect, while lexical similarity can reward a fluent but technically false comment. The project therefore combines human labels with a structured LLM judge.</p>
+
+<h2>2. Golden dataset and labelling</h2>
+<p>The checked-in JSONL contains 160 examples across Python (110) and JavaScript (50), split into 112 development and 48 reserved test items. Every row contains two human labels. The labelling guide defines good, bad, and borderline cases with six examples.</p>
+<table><tr><th>Measure</th><th>Repository evidence</th></tr><tr><td>Items</td><td>160</td></tr><tr><td>Dev / test</td><td>112 / 48</td></tr><tr><td>Human agreement</td><td>86.25%</td></tr><tr><td>Cohen's kappa</td><td>0.72</td></tr></table>
+<p class="small">Source: <code>data/golden_set.jsonl</code>, <code>data/labelling_guide.md</code>, and <code>data/agreement_report.md</code>. Dropped-item count/methodology requires team confirmation.</p>
+
+<h2>3. Harness and judge</h2>
+<p>The intended pipeline is code → system → structured comment → judge → per-item JSONL. The system schema is <code>{"comment":"string"}</code>; the documented judge schema contains verdict, correctness, usefulness, and a short reason. Each result must also preserve separate system/judge token counts and latency.</p>
+<p><b>Status:</b> harness implementation and results are pending Khalil. Judge-vs-human agreement, position-order swaps, verbosity-padding tests, and concrete failure examples are pending Yasmine. No reliability claim is currently supportable.</p>
+
+<h2>4. System prompt engineering</h2>
+<p>Version 1 is intentionally a baseline: it requests one professional comment about the most important demonstrable issue, rejects unsupported assumptions, permits a no-issue answer, and requires schema-valid JSON. The harness should load the file as the system message and pass code separately as the user message.</p>
+<table><tr><th>Version</th><th>Development items</th><th>Good</th><th>Correct</th><th>Useful</th><th>Mean cost / latency</th></tr><tr><td>v1 baseline</td><td colspan="5">Pending harness and judge integration</td></tr></table>
+<p>No v2/v3 was created: without actual development failures, additional versions would be artificial. After v1 runs, failures will be classified as false positives, missed bugs, vague comments, unsupported claims, clean-code errors, or schema violations. The selected prompt will be frozen before one authorized test evaluation.</p>
+
+<h2>5. Cost and scalability</h2>
+<p>For each call, cost equals <code>(input tokens × input price + output tokens × output price) / 1,000,000</code>. The tool calculates system and judge costs separately because models and prices may differ, then reports total and mean cost, cost per 1,000 items, daily cost, and 100× daily-volume cost. Prices are user inputs; no provider price is fabricated.</p>
+<p><b>Measured cost:</b> pending result JSONL. Linear scaling is only a baseline: batching and prompt caching may reduce effective cost, retries add calls, concurrency changes throughput, and provider rate limits may prevent the projected volume.</p>
+
+<h2>6. Limitations and conclusion</h2>
+<ul><li>System, judge, bias, cost, and latency measurements remain pending integration.</li><li>The report must not be submitted as final until those results replace every pending field.</li><li>The current work establishes an auditable baseline prompt, validated cost formulas, explicit interfaces, and honest documentation without using the reserved test labels for optimization.</li></ul>
+<p>The final conclusion will compare measured prompt versions, judge reliability, bias rates, and the single frozen-prompt test result.</p>
+</body></html>

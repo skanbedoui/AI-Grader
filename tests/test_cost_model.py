@@ -1,56 +1,79 @@
+import math
 import tempfile
 import unittest
 from pathlib import Path
 
-from cost_model import Usage, extract_usage, load_usage, summarize_costs
+from cost_model import CallUsage, ItemUsage, Prices, calculate_costs, extract_item_usage, load_results
 
 
 class CostModelTests(unittest.TestCase):
-    def test_extracts_current_and_legacy_usage_names(self) -> None:
-        self.assertEqual(
-            extract_usage({"usage": {"input_tokens": 10, "output_tokens": 4}}),
-            Usage(10, 4),
-        )
-        self.assertEqual(
-            extract_usage({"prompt_tokens": 8, "completion_tokens": 2}),
-            Usage(8, 2),
-        )
+    PRICES = Prices(2.0, 8.0, 3.0, 12.0)
 
-    def test_sums_system_and_judge_usage(self) -> None:
-        row = {
-            "system_output": {
-                "comment": "No issue found.",
-                "usage": {"input_tokens": 100, "output_tokens": 10},
-            },
-            "judge_verdict": {
-                "verdict": "good",
-                "usage": {"input_tokens": 130, "output_tokens": 20},
-            },
-        }
-        self.assertEqual(extract_usage(row), Usage(230, 30))
+    def item(self, si=100, so=20, ji=150, jo=30):
+        return ItemUsage(CallUsage(si, so), CallUsage(ji, jo))
 
-    def test_prefers_combined_usage_over_component_usage(self) -> None:
-        row = {
-            "usage": {"input_tokens": 12, "output_tokens": 3},
-            "system_usage": {"input_tokens": 8, "output_tokens": 2},
-            "judge_usage": {"input_tokens": 4, "output_tokens": 1},
-        }
-        self.assertEqual(extract_usage(row), Usage(12, 3))
+    def test_standard_cost_calculation_with_different_prices(self):
+        measured = calculate_costs([self.item()], self.PRICES, 10)["measurement"]
+        self.assertAlmostEqual(measured["system_cost_usd"], 0.00036)
+        self.assertAlmostEqual(measured["judge_cost_usd"], 0.00081)
+        self.assertAlmostEqual(measured["total_cost_usd"], 0.00117)
 
-    def test_calculates_observed_and_projected_cost(self) -> None:
-        summary = summarize_costs([Usage(100, 50), Usage(300, 50)], 2.0, 8.0, 2.0)
-        self.assertEqual(summary["items"], 2)
-        self.assertAlmostEqual(summary["observed_cost_usd"], 0.0016)
-        self.assertAlmostEqual(summary["mean_cost_per_item_usd"], 0.0008)
-        self.assertAlmostEqual(summary["projected_cost_per_1k_items_usd"], 0.8)
-        self.assertAlmostEqual(summary["projected_cost_at_100x_usd"], 160.0)
+    def test_zero_tokens_cost_zero(self):
+        result = calculate_costs([self.item(0, 0, 0, 0)], self.PRICES, 0)
+        self.assertEqual(result["measurement"]["total_cost_usd"], 0)
+        self.assertEqual(result["projection"]["estimated_daily_cost_usd"], 0)
 
-    def test_reports_bad_jsonl_line(self) -> None:
+    def test_empty_results_rejected(self):
+        with self.assertRaisesRegex(ValueError, "at least one"):
+            calculate_costs([], self.PRICES, 10)
+
+    def test_negative_tokens_rejected(self):
+        with self.assertRaisesRegex(ValueError, "non-negative integer"):
+            extract_item_usage({"system_usage": {"input_tokens": -1, "output_tokens": 2}, "judge_usage": {"input_tokens": 3, "output_tokens": 4}})
+
+    def test_negative_and_non_finite_prices_rejected(self):
+        for invalid in (-1.0, math.nan, math.inf):
+            with self.subTest(invalid=invalid), self.assertRaisesRegex(ValueError, "finite, non-negative"):
+                calculate_costs([self.item()], Prices(invalid, 1, 1, 1), 10)
+
+    def test_missing_required_usage_rejected(self):
+        with self.assertRaisesRegex(ValueError, "missing judge_usage"):
+            extract_item_usage({"system_usage": {"input_tokens": 1, "output_tokens": 2}})
+
+    def test_multiple_items_aggregate_without_double_counting(self):
+        measured = calculate_costs([self.item(), self.item()], self.PRICES, 10)["measurement"]
+        self.assertEqual(measured["item_count"], 2)
+        self.assertEqual(measured["tokens"]["system_input"], 200)
+        self.assertAlmostEqual(measured["average_cost_per_item_usd"], 0.00117)
+
+    def test_per_1k_daily_and_100x_projection(self):
+        projection = calculate_costs([self.item()], self.PRICES, 500)["projection"]
+        self.assertAlmostEqual(projection["cost_per_1k_items_usd"], 1.17)
+        self.assertAlmostEqual(projection["estimated_daily_cost_usd"], 0.585)
+        self.assertEqual(projection["volume_at_100x"], 50_000)
+        self.assertAlmostEqual(projection["estimated_cost_at_100x_usd"], 58.5)
+
+    def test_nested_usage_and_legacy_token_names_supported(self):
+        record = extract_item_usage({"system_output": {"usage": {"prompt_tokens": 10, "completion_tokens": 2}}, "judge_verdict": {"usage": {"input_tokens": 20, "output_tokens": 3}}})
+        self.assertEqual(record, self.item(10, 2, 20, 3))
+
+    def test_empty_jsonl_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "run.jsonl"
-            path.write_text('{"usage":{"input_tokens":1}}\n', encoding="utf-8")
-            with self.assertRaisesRegex(ValueError, r"run\.jsonl:1"):
-                load_usage(path)
+            path = Path(directory) / "empty.jsonl"
+            path.write_text("\n", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "no evaluation records"):
+                load_results(path)
+
+    def test_malformed_jsonl_reports_line(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "bad.jsonl"
+            path.write_text("not json\n", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, r"bad\.jsonl:1"):
+                load_results(path)
+
+    def test_negative_daily_volume_rejected(self):
+        with self.assertRaisesRegex(ValueError, "daily_volume"):
+            calculate_costs([self.item()], self.PRICES, -1)
 
 
 if __name__ == "__main__":

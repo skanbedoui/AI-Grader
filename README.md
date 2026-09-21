@@ -1,23 +1,49 @@
 # AI-Grader
 
-AI-Grader evaluates the quality of AI-generated code review comments. Given a code snippet, the system produces one structured review comment; a separate judge grades whether that comment is correct and useful.
+AI-Grader is an evaluation harness project for code-review comment quality. A system LLM receives a code snippet and returns exactly one review comment. A separate LLM judge grades whether that comment is correct and useful. Exact string matching is inappropriate because multiple differently worded comments can identify the same defect.
 
-## Repository status
+## Current status
 
-The golden dataset and the v1 system prompt are present. Harness-core and judge/reliability integration are still in progress, so the end-to-end command and measured headline result are not available on `main` yet. This README deliberately does not claim unmeasured results.
+The repository currently contains the golden dataset, labelling documentation, baseline system prompt, and standalone cost model. The harness and judge tracks have not landed, so end-to-end system scores, judge reliability results, bias results, and final API costs are pending. No unmeasured result is claimed here.
 
-## Setup
+## Architecture
 
-Clone the repository and enter it:
-
-```bash
-git clone git@github.com:skanbedoui/AI-Grader.git
-cd AI-Grader
+```text
+code snippet -> system LLM -> {"comment": "..."}
+             -> LLM judge  -> structured correctness/usefulness verdict
+             -> harness    -> one JSONL result per dataset item
+             -> analysis   -> quality, latency, and cost summaries
 ```
 
-The dataset builder and cost model use only the Python standard library. The harness dependency installation command will be added when the harness track lands its dependency manifest.
+The development split is used for prompt iteration. The reserved test split must be evaluated once only after the final prompt is frozen.
 
-## Run
+## Repository structure
+
+```text
+data/                    Golden set, labelling guide, agreement report, builder
+prompts/                 Versioned system prompt and prompt changelog
+tests/test_cost_model.py Abdallah's cost-model tests
+cost_model.py            Measured cost aggregation and scale projections
+README.md                Setup, methodology, status, and contributions
+report.html              Editable provisional report source
+report.pdf               Generated provisional report (when present)
+postmortem.md             Evidence-based project retrospective
+```
+
+The planned `harness/` and `results/` directories are pending their owners' integration.
+
+## Installation
+
+Python 3.10 or newer is sufficient for the files currently present; they use only the standard library.
+
+```bash
+python --version
+python -m unittest discover -s tests -v
+```
+
+An API SDK installation command cannot be documented until the harness dependency manifest is added. Store future credentials in an ignored `.env` file or the shell environment; never commit API keys. The expected variable name must be documented by the harness owner.
+
+## Running the project
 
 Rebuild the checked-in dataset from Skander's deterministic generator:
 
@@ -25,41 +51,63 @@ Rebuild the checked-in dataset from Skander's deterministic generator:
 python data/build_dataset.py
 ```
 
-This command overwrites `data/golden_set.jsonl`; do not run it merely to validate a teammate's manual dataset changes.
+This overwrites `data/golden_set.jsonl`; do not use it merely to validate manual dataset edits.
 
-Run the cost model against a harness result file containing logged input and output token counts. It accepts combined `usage`, separate `system_usage`/`judge_usage`, or usage nested in `system_output` and `judge_verdict`:
+The planned end-to-end command is `python harness/run.py --split dev`, but it is not runnable because `harness/run.py` does not yet exist. Do not run the test split during prompt development.
+
+## Evaluation methodology
+
+A comment is correct when it identifies a real issue or correctly reports that no issue is present. It is useful when it is specific, actionable where appropriate, and professionally worded. Each dataset row has two human labels and a locked `dev` or `test` split. The future harness must store input, structured system output, structured judge verdict and reason, separate token usage for both calls, and latency for every item.
+
+The dataset contains 160 items (112 development, 48 test; 110 Python, 50 JavaScript). The checked-in agreement report records 86.25% human agreement and Cohen's kappa of 0.72. No system or judge score is currently available.
+
+## Prompt engineering
+
+`prompts/system_prompt_v1.md` is the baseline. Khalil's caller should load it as the system instruction, pass the code snippet separately as the user message, and enforce `{"comment": "string"}` as structured output. Development results must be logged before adding v2. Each later version must address observed failures and receive a before/after entry in `prompts/CHANGELOG.md`; previous versions must remain unchanged.
+
+## Cost model
+
+The calculator requires per-item usage for both calls, either as `system_usage`/`judge_usage` or as `system_output.usage`/`judge_verdict.usage`. Each usage object contains integer `input_tokens` and `output_tokens` (legacy `prompt_tokens` and `completion_tokens` are also accepted).
 
 ```bash
 python cost_model.py results/<run_id>.jsonl \
-  --input-price <usd-per-million-input-tokens> \
-  --output-price <usd-per-million-output-tokens>
+  --system-input-price <usd-per-million> \
+  --system-output-price <usd-per-million> \
+  --judge-input-price <usd-per-million> \
+  --judge-output-price <usd-per-million> \
+  --daily-volume <items>
 ```
 
-The calculator reports observed cost, average cost per item, cost per 1,000 items, and the requested 100x projection. Prices are explicit CLI inputs because model pricing can change. At production scale, unit cost may not be linear because batching and prompt caching can reduce it while rate limits can constrain throughput.
-
-The end-to-end harness command documented in the project plan is:
-
-```bash
-python harness/run.py --split test
-```
-
-It will become runnable after the harness-core and judge tracks merge. During prompt iteration, use only `--split dev`; run `--split test` once after the final prompt is frozen.
+Prices are explicit because providers and models can differ and pricing changes. The output separates measured token totals and run costs from projected cost per 1,000 items, daily cost, and cost at 100x daily volume. Projections assume constant usage and list price; batching and prompt caching may lower cost, while retries add cost and rate limits constrain throughput. Concurrency changes throughput, not unit token cost by itself.
 
 ## Results
 
-The dataset contains 160 Python and JavaScript examples: 112 development rows and 48 reserved test rows. Every example is double-labelled. Human labelers achieved 86.25% agreement and Cohen's kappa of 0.72.
+| Measure | Available result |
+|---|---:|
+| Dataset size | 160 |
+| Development/test split | 112 / 48 |
+| Human agreement | 86.25% |
+| Cohen's kappa | 0.72 |
+| System quality | Pending harness and judge |
+| Judge reliability/bias | Pending judge track |
+| Measured API cost/latency | Pending result JSONL |
 
-System and judge scores are not reported yet because no timestamped harness result has been committed. Final results must link to a complete JSONL run in `results/` rather than being copied from an ad hoc evaluation.
+## Reproducibility
 
-## Prompt iteration
+For the currently implemented scope:
 
-System prompts live in `prompts/system_prompt_v*.md`. Every new prompt version must have a matching entry in `prompts/CHANGELOG.md` with measured before/after development scores. Test examples must not be inspected or used to tune prompts.
+```bash
+python -m unittest discover -s tests -v
+python -m py_compile cost_model.py
+```
+
+Full clean-clone reproduction remains blocked until the harness, dependency manifest, judge prompts, and timestamped result files are integrated.
 
 ## Contributions
 
-- Skander Bedoui: golden dataset, labelling guide, agreement report, and dataset builder.
-- Khalil: shared schemas and harness core (in progress).
-- Yasmine: judge prompts and reliability/bias evaluation (in progress).
-- Abdallah Djarraya: system-prompt iteration, prompt changelog, cost model, reproducibility documentation, and final report assembly.
+- **Skander Bedoui:** checked-in golden dataset, labelling guide, agreement report, and dataset builder.
+- **Khalil:** shared schemas and harness core (not yet present in this repository state).
+- **Yasmine:** judge prompts and reliability/bias evaluation (not yet present in this repository state).
+- **Abdallah Djarraya:** baseline system prompt and changelog, separate system/judge cost model and tests, cost/scalability analysis, README, provisional report assembly, and postmortem contribution.
 
-All team members review the final report and contribute to the postmortem.
+All team members must review the final report and add their own evidence to the postmortem before submission.
