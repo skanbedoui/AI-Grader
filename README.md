@@ -1,123 +1,198 @@
 # AI-Grader
 
-AI-Grader is an evaluation harness project for code-review comment quality. A system LLM receives a code snippet and returns exactly one review comment. A separate LLM judge grades whether that comment is correct and useful. Exact string matching is inappropriate because multiple differently worded comments can identify the same defect.
+AI-Grader evaluates the quality of code-review comments. A system LLM receives a Python or JavaScript snippet and returns one structured comment. A second LLM judge evaluates whether the comment is correct and useful. Exact string matching is not suitable because multiple phrasings can identify the same defect.
 
-## Current status
+## Status at a glance
 
-The repository contains the golden dataset, labelling documentation, prompts, provider client, runnable harness, and standalone cost model. Real system scores, judge reliability results, bias results, and API costs require a running Ollama service or a configured OpenAI key.
+The repository currently contains the labelled dataset, prompts, provider client, runnable system-to-judge harness, timestamped development output, cost model, tests, report, and postmortem. The latest local development run is `results/dev_20260927T111715Z.jsonl` and contains 112 rows, one for each development item.
+
+The assignment's final measurements are not complete yet: system quality summaries, judge-versus-human reliability, position-bias and verbosity-bias percentages, measured cost/latency analysis, and the single final test-set run still need to be produced and added to the report.
+
+## Requirements
+
+- Windows PowerShell
+- Python 3.10 or newer
+- Ollama, or an OpenAI API key
+- The required Ollama model pulled locally when using Ollama
+
+## Setup on Windows
+
+Run these commands from the repository root (`AI-Grader`):
+
+```powershell
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+```
+
+If PowerShell blocks activation, either select `.venv\Scripts\python.exe` as the VS Code interpreter or run this once for the current user:
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+```
+
+Create `.env` from `.env.example`, then set the provider. `.env` is ignored by Git and must never be committed:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+For Ollama, use settings like these in `.env`:
+
+```dotenv
+LLM_PROVIDER=ollama
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=llama3.1
+```
+
+Ollama must be running before the harness starts. On Windows, Ollama may already be running in the background. Check it before starting another server:
+
+```powershell
+ollama list
+Get-NetTCPConnection -LocalPort 11434 -ErrorAction SilentlyContinue
+```
+
+If the model is not installed, pull it once:
+
+```powershell
+ollama pull llama3.1
+```
+
+If port `11434` is listening, do not run `ollama serve` again. If it is not listening, start Ollama in a separate terminal:
+
+```powershell
+ollama serve
+```
+
+For OpenAI instead, set `LLM_PROVIDER=openai`, provide `OPENAI_API_KEY`, and set `OPENAI_MODEL` in `.env`.
+
+## Test the project
+
+Run the unit tests from the activated environment:
+
+```powershell
+python -m unittest discover -s tests -v
+```
+
+Run syntax checks:
+
+```powershell
+python -m py_compile config.py cost_model.py model_client.py harness\run.py data\build_dataset.py
+```
+
+The cost-model tests do not call an LLM. The harness run does call the configured provider and may take several minutes for the full development split.
+
+## Run the evaluation
+
+First verify the dataset without overwriting it. The dataset builder is deterministic but writes `data/golden_set.jsonl`, so run it only when intentionally rebuilding the dataset:
+
+```powershell
+python data\build_dataset.py
+```
+
+Run the development split while prompts are being developed:
+
+```powershell
+python harness\run.py --split dev
+```
+
+The runner loads `prompts\system_prompt_v1.md` and `prompts\judge_prompt_v1.md`, calls the system and judge once per item, and writes a new timestamped JSONL file under `results\`. It preserves the input, model/provider, structured outputs, token usage, latency, human labels, and status for each item.
+
+Inspect the newest run in PowerShell:
+
+```powershell
+$latest = Get-ChildItem results\dev_*.jsonl |
+    Sort-Object LastWriteTime -Descending |
+    Select-Object -First 1
+$rows = Get-Content $latest.FullName |
+    Where-Object { $_.Trim() } |
+    ForEach-Object { $_ | ConvertFrom-Json }
+Write-Host "File:" $latest.FullName
+Write-Host "Rows:" $rows.Count
+Write-Host "Statuses:" (($rows.status | Sort-Object -Unique) -join ", ")
+```
+
+Do not run the test split during prompt iteration. After the final prompt is frozen and the team has reviewed the development evidence, run it exactly once:
+
+```powershell
+python harness\run.py --split test
+```
+
+Do not edit result JSONL files by hand. Keep every timestamped run so the reported result is reproducible and auditable.
+
+## Cost calculation
+
+The cost model requires separate system and judge token prices. Use a result file whose rows have successful usage data:
+
+```powershell
+python cost_model.py results\<run_id>.jsonl `
+  --system-input-price <usd-per-million> `
+  --system-output-price <usd-per-million> `
+  --judge-input-price <usd-per-million> `
+  --judge-output-price <usd-per-million> `
+  --daily-volume <items>
+```
+
+It reports measured token totals, system cost, judge cost, total cost, mean cost per item, cost per 1,000 items, daily cost, and a 100x volume projection. Prices are inputs, not claims about provider pricing. Batching and prompt caching can reduce effective cost, retries add cost, and rate limits can restrict throughput.
 
 ## Architecture
 
 ```text
 code snippet -> system LLM -> {"comment": "..."}
-             -> LLM judge  -> structured correctness/usefulness verdict
-             -> harness    -> one JSONL result per dataset item
-             -> analysis   -> quality, latency, and cost summaries
+             -> LLM judge  -> verdict/correct/useful/reason JSON
+             -> harness    -> one JSONL row per dataset item
+             -> analysis   -> quality, reliability, latency, and cost summaries
 ```
 
-The development split is used for prompt iteration. The reserved test split must be evaluated once only after the final prompt is frozen.
+The dataset has 160 items: 110 Python and 50 JavaScript, with 112 development items and 48 reserved test items. Each row has two human labels. The checked-in agreement report records 86.25% agreement and Cohen's kappa of 0.72.
+
+## Assignment checklist
+
+### Done in this repository
+
+- [x] 160-item golden dataset with Python and JavaScript snippets.
+- [x] Double labels, locked 112/48 development/test split, labelling guide, and human agreement report.
+- [x] Baseline system prompt and judge prompt with structured JSON expectations.
+- [x] Ollama and OpenAI provider client with token usage capture.
+- [x] End-to-end `harness\run.py` that writes one result row per item, including latency and status.
+- [x] Cost model with separate system/judge prices and unit/scale projections.
+- [x] Cost-model unit tests.
+- [x] Provisional report and evidence-based postmortem scaffolding.
+- [x] Timestamped development result file with 112 rows.
+
+### Still required by the assignment
+
+- [ ] Run a clean-clone setup and confirm the harness runs with no manual fixes.
+- [ ] Produce development quality metrics: good rate, correctness, usefulness, per-language results, and failure categories.
+- [ ] Report judge-versus-human agreement separately for dev and test using both percentage agreement and Cohen's kappa.
+- [ ] Implement and report the position-bias swap test and verbosity-bias padding test, including at least two concrete failure examples.
+- [ ] Add every prompt version's before/after development score to `prompts\CHANGELOG.md`; the current v1 entry still contains pending fields and no v2 is justified until failures are analysed.
+- [ ] Calculate measured cost and latency from successful result rows and add the evidence to the report.
+- [ ] Freeze the final prompt, run `harness\run.py --split test` exactly once, and preserve the timestamped output.
+- [ ] Replace all pending fields in `report.pdf`/`report.html`, have all teammates review the report, and add their evidence to `postmortem.md`.
+- [ ] Verify Git history contains no API keys and document reviewed pull requests, protected main, and the final clean-clone check.
 
 ## Repository structure
 
 ```text
 data/                    Golden set, labelling guide, agreement report, builder
 prompts/                 Versioned system and judge prompts, plus changelog
-harness/                 Runner that writes one structured result per item
-results/                 Generated per-item JSONL runs (ignored local output)
-tests/test_cost_model.py Abdallah's cost-model tests
+harness/                 End-to-end runner
+results/                 Timestamped generated JSONL runs
+tests/test_cost_model.py Cost-model tests
 cost_model.py            Measured cost aggregation and scale projections
 model_client.py          Ollama/OpenAI provider client
-README.md                Setup, methodology, status, and contributions
 report.html              Editable provisional report source
-report.pdf               Generated provisional report (when present)
-postmortem.md             Evidence-based project retrospective
+report.pdf               Provisional report
+postmortem.md            Project retrospective
 ```
-
-The planned `harness/` and `results/` directories are pending their owners' integration.
-
-## Installation
-
-Python 3.10 or newer is sufficient. Install the provider dependencies in the virtual environment:
-
-```bash
-python --version
-python -m pip install -r requirements.txt
-python -m unittest discover -s tests -v
-```
-
-Copy `.env.example` to `.env`, then select `ollama` or `openai`. Never commit or share `.env` or API keys.
-
-## Running the project
-
-Rebuild the checked-in dataset from Skander's deterministic generator:
-
-```bash
-python data/build_dataset.py
-```
-
-This overwrites `data/golden_set.jsonl`; do not use it merely to validate manual dataset edits.
-
-Run the development evaluation with:
-
-```bash
-python harness/run.py --split dev
-```
-
-The command writes one JSONL result row per dataset item to `results/`. Run `--split test` only after the prompt is frozen.
-
-## Evaluation methodology
-
-A comment is correct when it identifies a real issue or correctly reports that no issue is present. It is useful when it is specific, actionable where appropriate, and professionally worded. Each dataset row has two human labels and a locked `dev` or `test` split. The future harness must store input, structured system output, structured judge verdict and reason, separate token usage for both calls, and latency for every item.
-
-The dataset contains 160 items (112 development, 48 test; 110 Python, 50 JavaScript). The checked-in agreement report records 86.25% human agreement and Cohen's kappa of 0.72. No system or judge score is currently available.
-
-## Prompt engineering
-
-`prompts/system_prompt_v1.md` is the baseline. Khalil's caller should load it as the system instruction, pass the code snippet separately as the user message, and enforce `{"comment": "string"}` as structured output. Development results must be logged before adding v2. Each later version must address observed failures and receive a before/after entry in `prompts/CHANGELOG.md`; previous versions must remain unchanged.
-
-## Cost model
-
-The calculator requires per-item usage for both calls, either as `system_usage`/`judge_usage` or as `system_output.usage`/`judge_verdict.usage`. Each usage object contains integer `input_tokens` and `output_tokens` (legacy `prompt_tokens` and `completion_tokens` are also accepted).
-
-```bash
-python cost_model.py results/<run_id>.jsonl \
-  --system-input-price <usd-per-million> \
-  --system-output-price <usd-per-million> \
-  --judge-input-price <usd-per-million> \
-  --judge-output-price <usd-per-million> \
-  --daily-volume <items>
-```
-
-Prices are explicit because providers and models can differ and pricing changes. The output separates measured token totals and run costs from projected cost per 1,000 items, daily cost, and cost at 100x daily volume. Projections assume constant usage and list price; batching and prompt caching may lower cost, while retries add cost and rate limits constrain throughput. Concurrency changes throughput, not unit token cost by itself.
-
-## Results
-
-| Measure | Available result |
-|---|---:|
-| Dataset size | 160 |
-| Development/test split | 112 / 48 |
-| Human agreement | 86.25% |
-| Cohen's kappa | 0.72 |
-| System quality | Pending harness and judge |
-| Judge reliability/bias | Pending judge track |
-| Measured API cost/latency | Pending result JSONL |
-
-## Reproducibility
-
-For the currently implemented scope:
-
-```bash
-python -m unittest discover -s tests -v
-python -m py_compile cost_model.py
-```
-
-Full clean-clone reproduction remains blocked until the harness, dependency manifest, judge prompts, and timestamped result files are integrated.
 
 ## Contributions
 
-- **Skander Bedoui:** checked-in golden dataset, labelling guide, agreement report, and dataset builder.
-- **Khalil:** shared schemas and harness core (not yet present in this repository state).
-- **Yasmine:** judge prompts and reliability/bias evaluation (not yet present in this repository state).
-- **Abdallah Djarraya:** baseline system prompt and changelog, separate system/judge cost model and tests, cost/scalability analysis, README, provisional report assembly, and postmortem contribution.
+- **Skander Bedoui:** golden dataset, labelling guide, agreement report, and dataset builder.
+- **Khalil:** provider integration and end-to-end harness runner.
+- **Yasmine:** judge prompt and the remaining judge-reliability and bias-analysis track.
+- **Abdallah Djarraya:** baseline system prompt and changelog, cost model and tests, cost/scalability analysis, README, provisional report assembly, and postmortem contribution.
 
-All team members must review the final report and add their own evidence to the postmortem before submission.
+The contributions list and final metrics must be checked against the merged Git history before submission.
