@@ -3,6 +3,7 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 .venv/
+results/*.jsonl
 venv/
 
 # Secrets and local configuration

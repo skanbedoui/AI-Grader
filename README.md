@@ -4,7 +4,7 @@ AI-Grader is an evaluation harness project for code-review comment quality. A sy
 
 ## Current status
 
-The repository currently contains the golden dataset, labelling documentation, baseline system prompt, and standalone cost model. The harness and judge tracks have not landed, so end-to-end system scores, judge reliability results, bias results, and final API costs are pending. No unmeasured result is claimed here.
+The repository contains the golden dataset, labelling documentation, prompts, provider client, runnable harness, and standalone cost model. Real system scores, judge reliability results, bias results, and API costs require a running Ollama service or a configured OpenAI key.
 
 ## Architecture
 
@@ -21,9 +21,12 @@ The development split is used for prompt iteration. The reserved test split must
 
 ```text
 data/                    Golden set, labelling guide, agreement report, builder
-prompts/                 Versioned system prompt and prompt changelog
+prompts/                 Versioned system and judge prompts, plus changelog
+harness/                 Runner that writes one structured result per item
+results/                 Generated per-item JSONL runs (ignored local output)
 tests/test_cost_model.py Abdallah's cost-model tests
 cost_model.py            Measured cost aggregation and scale projections
+model_client.py          Ollama/OpenAI provider client
 README.md                Setup, methodology, status, and contributions
 report.html              Editable provisional report source
 report.pdf               Generated provisional report (when present)
@@ -34,14 +37,15 @@ The planned `harness/` and `results/` directories are pending their owners' inte
 
 ## Installation
 
-Python 3.10 or newer is sufficient for the files currently present; they use only the standard library.
+Python 3.10 or newer is sufficient. Install the provider dependencies in the virtual environment:
 
 ```bash
 python --version
+python -m pip install -r requirements.txt
 python -m unittest discover -s tests -v
 ```
 
-An API SDK installation command cannot be documented until the harness dependency manifest is added. Store future credentials in an ignored `.env` file or the shell environment; never commit API keys. The expected variable name must be documented by the harness owner.
+Copy `.env.example` to `.env`, then select `ollama` or `openai`. Never commit or share `.env` or API keys.
 
 ## Running the project
 
@@ -53,7 +57,13 @@ python data/build_dataset.py
 
 This overwrites `data/golden_set.jsonl`; do not use it merely to validate manual dataset edits.
 
-The planned end-to-end command is `python harness/run.py --split dev`, but it is not runnable because `harness/run.py` does not yet exist. Do not run the test split during prompt development.
+Run the development evaluation with:
+
+```bash
+python harness/run.py --split dev
+```
+
+The command writes one JSONL result row per dataset item to `results/`. Run `--split test` only after the prompt is frozen.
 
 ## Evaluation methodology
 

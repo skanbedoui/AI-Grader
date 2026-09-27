@@ -7,10 +7,8 @@ It supports both an Ollama local model and an OpenAI API-backed model.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
 
 
-@dataclass(frozen=True)
 def provider_settings() -> dict[str, str]:
     """Return provider configuration from environment variables.
 
