@@ -160,13 +160,14 @@ The dataset has 160 items: 110 Python and 50 JavaScript, with 112 development it
 - [x] Cost-model unit tests.
 - [x] Provisional report and evidence-based postmortem scaffolding.
 - [x] Timestamped development result file with 112 rows.
+- [x] Pointwise judge prompt (`prompts/judge_prompt_v1.md`) and compare-mode judge prompt (`prompts/judge_prompt_compare.md`).
+- [x] Judge client (`harness/judge_client.py`) supporting pointwise and compare-mode evaluation.
+- [x] LLM Judge Reliability & Bias suite (`harness/reliability.py`) calculating human-vs-judge agreement (% agreement + Cohen's $\kappa$), position-bias swap test, verbosity-bias padding test, and unit tests (`tests/test_reliability.py`).
 
 ### Still required by the assignment
 
 - [ ] Run a clean-clone setup and confirm the harness runs with no manual fixes.
 - [ ] Produce development quality metrics: good rate, correctness, usefulness, per-language results, and failure categories.
-- [ ] Report judge-versus-human agreement separately for dev and test using both percentage agreement and Cohen's kappa.
-- [ ] Implement and report the position-bias swap test and verbosity-bias padding test, including at least two concrete failure examples.
 - [ ] Add every prompt version's before/after development score to `prompts\CHANGELOG.md`; the current v1 entry still contains pending fields and no v2 is justified until failures are analysed.
 - [ ] Calculate measured cost and latency from successful result rows and add the evidence to the report.
 - [ ] Freeze the final prompt, run `harness\run.py --split test` exactly once, and preserve the timestamped output.
@@ -176,23 +177,25 @@ The dataset has 160 items: 110 Python and 50 JavaScript, with 112 development it
 ## Repository structure
 
 ```text
-data/                    Golden set, labelling guide, agreement report, builder
-prompts/                 Versioned system and judge prompts, plus changelog
-harness/                 End-to-end runner
-results/                 Timestamped generated JSONL runs
-tests/test_cost_model.py Cost-model tests
-cost_model.py            Measured cost aggregation and scale projections
-model_client.py          Ollama/OpenAI provider client
-report.html              Editable provisional report source
-report.pdf               Provisional report
-postmortem.md            Project retrospective
+data/                      Golden set, labelling guide, agreement report, builder
+prompts/                   Versioned system prompt, pointwise/compare judge prompts, changelog
+harness/                   End-to-end runner, judge client, and reliability/bias evaluation suite
+results/                   Timestamped generated JSONL runs and reliability reports
+tests/test_cost_model.py   Cost-model tests
+tests/test_reliability.py  Judge reliability and bias evaluation tests
+cost_model.py              Measured cost aggregation and scale projections
+model_client.py            Ollama/OpenAI provider client
+report.html                Editable provisional report source
+report.pdf                 Provisional report
+postmortem.md              Project retrospective
 ```
 
 ## Contributions
 
 - **Skander Bedoui:** golden dataset, labelling guide, agreement report, and dataset builder.
 - **Khalil:** provider integration and end-to-end harness runner.
-- **Yasmine:** judge prompt and the remaining judge-reliability and bias-analysis track.
+- **Yasmine Jedidi:** pointwise and compare-mode judge prompts, judge client module (`harness/judge_client.py`), LLM judge reliability suite (`harness/reliability.py`), human-vs-judge agreement calculations (% agreement + Cohen's $\kappa$), position-bias swap test, verbosity-bias padding test, reliability report generation, and unit tests (`tests/test_reliability.py`).
 - **Abdallah Djarraya:** baseline system prompt and changelog, cost model and tests, cost/scalability analysis, README, provisional report assembly, and postmortem contribution.
+
 
 The contributions list and final metrics must be checked against the merged Git history before submission.

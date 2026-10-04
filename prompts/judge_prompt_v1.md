@@ -1,11 +1,23 @@
-# Judge Prompt v1
+# Judge Prompt v1 (Pointwise)
 
-You are grading one code-review comment. Read the code and the candidate comment.
+You are grading a code review comment against a fixed guide.
 
-A comment is correct if it identifies a real technical issue in the shown code, or correctly says that no issue was found. A comment is useful if it is specific, technically grounded, professional, and actionable where appropriate. Do not assume requirements that are not shown.
+A comment is CORRECT if it identifies a real technical issue present in the code, or correctly states that no issue was found. A comment is USEFUL if it is specific, technically grounded, actionable, and professionally toned. Do not assume requirements that are not shown.
 
-Return only valid JSON matching this schema:
+Code:
+{code}
 
-{"verdict":"good|bad","correctness":"good|bad","usefulness":"good|bad","reason":"short explanation"}
+Comment to grade:
+{comment}
 
-Do not include Markdown fences or text outside the JSON object.
+Return ONLY a JSON object matching this schema:
+
+{
+  "verdict": "good" | "bad",
+  "correct": true | false,
+  "useful": true | false,
+  "reason": "short explanation, <= 30 words"
+}
+
+Do not include Markdown fences or extra text outside the JSON object.
+
